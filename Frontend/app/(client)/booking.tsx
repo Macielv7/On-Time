@@ -1,47 +1,137 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  Alert, ActivityIndicator,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, BorderRadius, Shadow } from '@/constants/theme';
 import { GradientButton } from '@/components/ui/gradient-button';
 import { Avatar } from '@/components/ui/avatar';
-
-const DAYS = [
-  { day: 'Dom', date: '11', full: '2025-05-11' },
-  { day: 'Seg', date: '12', full: '2025-05-12' },
-  { day: 'Ter', date: '13', full: '2025-05-13' },
-  { day: 'Qua', date: '14', full: '2025-05-14' },
-  { day: 'Qui', date: '15', full: '2025-05-15' },
-  { day: 'Sex', date: '16', full: '2025-05-16' },
-  { day: 'Sáb', date: '17', full: '2025-05-17' },
-];
-
-const SLOTS = ['09:00','09:45','10:30','11:15','14:00','14:45','15:30','16:15','17:00'];
+import { professionalsService, type Professional, type ServiceItem } from '@/services/professionals.service';
+import { appointmentsService } from '@/services/appointments.service';
 
 const PAYMENT_METHODS = [
-  { id: 'mp', icon: 'card', label: 'Mercado Pago', sub: 'Pix, cartão, boleto' },
-  { id: 'credit', icon: 'card-outline', label: 'Cartão de Crédito', sub: 'Visa, Master, Elo' },
+  { id: 'mercado_pago', icon: 'card', label: 'Mercado Pago', sub: 'Pix, cartão, boleto' },
+  { id: 'credit_card', icon: 'card-outline', label: 'Cartão de Crédito', sub: 'Visa, Master, Elo' },
   { id: 'cash', icon: 'cash-outline', label: 'Dinheiro', sub: 'Pagamento presencial' },
 ];
 
+function getNextDays(n: number) {
+  const days: { day: string; date: string; full: string }[] = [];
+  const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  for (let i = 0; i < n; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    days.push({ day: labels[d.getDay()], date: dd, full: `${y}-${m}-${dd}` });
+  }
+  return days;
+}
+
+function generateSlots(): string[] {
+  const slots: string[] = [];
+  for (let h = 9; h <= 17; h++) {
+    slots.push(`${String(h).padStart(2, '0')}:00`);
+    if (h < 17) slots.push(`${String(h).padStart(2, '0')}:30`);
+  }
+  return slots;
+}
+
+const DAYS = getNextDays(7);
+const SLOTS = generateSlots();
+
 export default function BookingScreen() {
   const insets = useSafeAreaInsets();
-  const [selDay, setSelDay] = useState('2025-05-12');
-  const [selSlot, setSelSlot] = useState<string | null>(null);
-  const [selPayment, setSelPayment] = useState('mp');
+  const params = useLocalSearchParams<{ professionalId?: string; serviceId?: string }>();
+
+  const [professional, setProfessional] = useState<Professional | null>(null);
+  const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
-  const handleConfirm = () => {
-    if (!selSlot) {
-      Alert.alert('Atenção', 'Por favor, selecione um horário.');
-      return;
+  const [selDay, setSelDay] = useState(DAYS[0].full);
+  const [selSlot, setSelSlot] = useState<string | null>(null);
+  const [selPayment, setSelPayment] = useState('mercado_pago');
+
+  useEffect(() => {
+    async function load() {
+      if (!params.professionalId) { setLoading(false); return; }
+      try {
+        const pro = await professionalsService.getProfessional(Number(params.professionalId));
+        setProfessional(pro);
+        const svc = params.serviceId
+          ? pro.services?.find((s) => s.id === Number(params.serviceId)) ?? pro.services?.[0] ?? null
+          : pro.services?.[0] ?? null;
+        setSelectedService(svc);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
     }
-    setConfirmed(true);
-  };
+    load();
+  }, [params.professionalId, params.serviceId]);
+
+  const handleConfirm = useCallback(async () => {
+    if (!selSlot) { Alert.alert('Atenção', 'Selecione um horário.'); return; }
+    if (!professional || !selectedService) { Alert.alert('Erro', 'Dados incompletos.'); return; }
+
+    setConfirming(true);
+    try {
+      await appointmentsService.createAppointment({
+        professional_id: professional.id,
+        service_id: selectedService.id,
+        scheduled_date: selDay,
+        scheduled_time: selSlot,
+        payment_method: selPayment,
+      });
+      setConfirmed(true);
+    } catch (err: any) {
+      Alert.alert('Erro ao agendar', err.message);
+    } finally {
+      setConfirming(false);
+    }
+  }, [selSlot, professional, selectedService, selDay, selPayment]);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={{ marginTop: 12, color: Colors.textSecondary, fontSize: 14 }}>Carregando...</Text>
+      </View>
+    );
+  }
+
+  // Sem profissional — veio sem params
+  if (!professional) {
+    return (
+      <View style={[styles.container, { alignItems: 'center', justifyContent: 'center', padding: 32 }]}>
+        <Ionicons name="alert-circle-outline" size={56} color={Colors.textMuted} />
+        <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.textPrimary, marginTop: 16, textAlign: 'center' }}>
+          Profissional não selecionado
+        </Text>
+        <Text style={{ fontSize: 14, color: Colors.textSecondary, marginTop: 8, textAlign: 'center' }}>
+          Escolha um profissional na tela inicial para agendar.
+        </Text>
+        <TouchableOpacity
+          onPress={() => router.replace('../(client)/home')}
+          style={{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.primary }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>Ir para o início</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
 
   if (confirmed) {
+    const selDayObj = DAYS.find((d) => d.full === selDay);
     return (
       <View style={[styles.successContainer, { paddingTop: insets.top }]}>
         <LinearGradient colors={['#6C63FF', '#8B5CF6']} style={styles.successGradient}>
@@ -52,29 +142,26 @@ export default function BookingScreen() {
           <Text style={styles.successSubtitle}>Seu agendamento foi confirmado.</Text>
           <View style={styles.successCard}>
             <View style={styles.successRow}>
-              <Ionicons name="person" size={16} color={Colors.textMuted} />
-              <Text style={styles.successLabel}>Carlos Mendes</Text>
+              <Ionicons name="person" size={16} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.successLabel}>{professional?.name}</Text>
             </View>
             <View style={styles.successRow}>
-              <Ionicons name="cut" size={16} color={Colors.textMuted} />
-              <Text style={styles.successLabel}>Corte + Barba</Text>
+              <Ionicons name="cut" size={16} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.successLabel}>{selectedService?.name}</Text>
             </View>
             <View style={styles.successRow}>
-              <Ionicons name="calendar" size={16} color={Colors.textMuted} />
-              <Text style={styles.successLabel}>Seg, 12 Mai • {selSlot}</Text>
+              <Ionicons name="calendar" size={16} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.successLabel}>{selDayObj?.day}, {selDayObj?.date} • {selSlot}</Text>
             </View>
             <View style={styles.successRow}>
-              <Ionicons name="cash" size={16} color={Colors.textMuted} />
-              <Text style={styles.successLabel}>R$ 55,00</Text>
+              <Ionicons name="cash" size={16} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.successLabel}>R$ {selectedService?.price?.toFixed(2)}</Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.successButton}
-            onPress={() => router.replace('/(client)/appointments')}
-          >
+          <TouchableOpacity style={styles.successButton} onPress={() => router.replace('../(client)/appointments')}>
             <Text style={styles.successButtonText}>Ver meus agendamentos</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.replace('/(client)/home')} style={{ marginTop: 12 }}>
+          <TouchableOpacity onPress={() => router.replace('../(client)/home')} style={{ marginTop: 12 }}>
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Voltar ao início</Text>
           </TouchableOpacity>
         </LinearGradient>
@@ -82,9 +169,12 @@ export default function BookingScreen() {
     );
   }
 
+  const proInitials = professional?.name
+    ? professional.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
+    : '?';
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.textPrimary} />
@@ -96,22 +186,51 @@ export default function BookingScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Service Summary */}
         <View style={styles.serviceCard}>
-          <Avatar initials="CM" size="md" />
+          <Avatar initials={proInitials} size="md" />
           <View style={{ flex: 1 }}>
-            <Text style={styles.svcName}>Corte + Barba</Text>
-            <Text style={styles.svcPro}>Carlos Mendes</Text>
+            <Text style={styles.svcName}>{selectedService?.name ?? '—'}</Text>
+            <Text style={styles.svcPro}>{professional?.name ?? '—'}</Text>
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
-              <View style={styles.svcMeta}>
-                <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
-                <Text style={styles.svcMetaTxt}>60 min</Text>
-              </View>
-              <View style={styles.svcMeta}>
-                <Ionicons name="cash-outline" size={12} color={Colors.primary} />
-                <Text style={[styles.svcMetaTxt, { color: Colors.primary, fontWeight: '700' }]}>R$ 55</Text>
-              </View>
+              {selectedService?.duration_min && (
+                <View style={styles.svcMeta}>
+                  <Ionicons name="time-outline" size={12} color={Colors.textMuted} />
+                  <Text style={styles.svcMetaTxt}>{selectedService.duration_min} min</Text>
+                </View>
+              )}
+              {selectedService?.price && (
+                <View style={styles.svcMeta}>
+                  <Ionicons name="cash-outline" size={12} color={Colors.primary} />
+                  <Text style={[styles.svcMetaTxt, { color: Colors.primary, fontWeight: '700' }]}>
+                    R$ {selectedService.price}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
+
+        {/* Services selector (if multiple) */}
+        {professional?.services && professional.services.length > 1 && (
+          <View style={styles.section}>
+            <Text style={styles.secTitle}>Serviço</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {professional.services.map((svc) => (
+                <TouchableOpacity
+                  key={svc.id}
+                  style={[styles.svcChip, selectedService?.id === svc.id && styles.svcChipActive]}
+                  onPress={() => setSelectedService(svc)}
+                >
+                  <Text style={[styles.svcChipName, selectedService?.id === svc.id && styles.svcChipNameActive]}>
+                    {svc.name}
+                  </Text>
+                  <Text style={[styles.svcChipPrice, selectedService?.id === svc.id && { color: '#fff' }]}>
+                    R$ {svc.price}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Date Picker */}
         <View style={styles.section}>
@@ -173,31 +292,38 @@ export default function BookingScreen() {
         <View style={styles.section}>
           <Text style={styles.secTitle}>Resumo</Text>
           <View style={styles.summaryCard}>
-            <SummaryRow label="Serviço" value="Corte + Barba" />
-            <SummaryRow label="Profissional" value="Carlos Mendes" />
-            <SummaryRow label="Data" value="Seg, 12 Mai" />
+            <SummaryRow label="Serviço" value={selectedService?.name ?? '—'} />
+            <SummaryRow label="Profissional" value={professional?.name ?? '—'} />
+            <SummaryRow label="Data" value={DAYS.find((d) => d.full === selDay)?.day + ', ' + DAYS.find((d) => d.full === selDay)?.date} />
             <SummaryRow label="Horário" value={selSlot || '—'} />
             <View style={styles.divider} />
             <View style={styles.summaryRow}>
               <Text style={styles.summaryTotal}>Total</Text>
-              <Text style={styles.summaryTotalValue}>R$ 55,00</Text>
+              <Text style={styles.summaryTotalValue}>R$ {selectedService?.price?.toFixed(2) ?? '—'}</Text>
             </View>
           </View>
         </View>
       </ScrollView>
 
       <View style={[styles.bottomCta, { paddingBottom: insets.bottom + 16 }]}>
-        <GradientButton title="Confirmar Agendamento" onPress={handleConfirm} />
+        {confirming ? (
+          <View style={styles.loadingBtn}>
+            <ActivityIndicator color="#fff" />
+            <Text style={styles.loadingBtnText}>Confirmando...</Text>
+          </View>
+        ) : (
+          <GradientButton title="Confirmar Agendamento" onPress={handleConfirm} />
+        )}
       </View>
     </View>
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value }: { label: string; value?: string }) {
   return (
     <View style={styles.summaryRow}>
       <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={styles.summaryValue}>{value ?? '—'}</Text>
     </View>
   );
 }
@@ -214,6 +340,11 @@ const styles = StyleSheet.create({
   svcMetaTxt: { fontSize: 12, color: Colors.textMuted },
   section: { paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg },
   secTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.sm },
+  svcChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: BorderRadius.md, backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border, gap: 4, ...Shadow.sm },
+  svcChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  svcChipName: { fontSize: 13, fontWeight: '600', color: Colors.textPrimary },
+  svcChipNameActive: { color: '#fff' },
+  svcChipPrice: { fontSize: 12, color: Colors.textMuted, fontWeight: '700' },
   dayChip: { width: 54, height: 70, borderRadius: BorderRadius.md, backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1.5, borderColor: Colors.border, ...Shadow.sm },
   dayChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   dayLabel: { fontSize: 11, fontWeight: '600', color: Colors.textMuted },
@@ -241,6 +372,8 @@ const styles = StyleSheet.create({
   summaryTotalValue: { fontSize: 18, fontWeight: '800', color: Colors.primary },
   divider: { height: 1, backgroundColor: Colors.border, marginVertical: 4 },
   bottomCta: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: Colors.surface, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, borderTopWidth: 1, borderTopColor: Colors.border, ...Shadow.lg },
+  loadingBtn: { height: 52, borderRadius: BorderRadius.md, backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  loadingBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   successContainer: { flex: 1 },
   successGradient: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
   successIcon: { width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg },

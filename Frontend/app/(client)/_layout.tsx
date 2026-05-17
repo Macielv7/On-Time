@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
-import { View, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 export default function ClientLayout() {
   return (
@@ -47,15 +47,6 @@ export default function ClientLayout() {
         }}
       />
       <Tabs.Screen
-        name="favorites"
-        options={{
-          title: 'Favoritos',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
@@ -64,6 +55,7 @@ export default function ClientLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="favorites" options={{ href: null }} />
       <Tabs.Screen name="professional/[id]" options={{ href: null }} />
       <Tabs.Screen name="booking" options={{ href: null }} />
     </Tabs>

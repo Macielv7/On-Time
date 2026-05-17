@@ -1,16 +1,26 @@
 {
-  "name": "backend",
+  "name": "nahora-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "NaHora — API de Agendamento de Serviços",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "db:reset": "node -e \"require('fs').existsSync('./nahora.db') && require('fs').unlinkSync('./nahora.db'); console.log('DB resetado!');\""
   },
-  "keywords": [],
+  "keywords": ["nahora", "agendamento", "api"],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
-    "express": "^5.2.1"
+    "dotenv": "^16.5.0",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite3": "^6.0.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
   }
 }

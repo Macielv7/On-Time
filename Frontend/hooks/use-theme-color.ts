@@ -1,21 +1,30 @@
 /**
- * Learn more about light and dark modes:
- * https://docs.expo.dev/guides/color-schemes/
+ * Hook simplificado para compatibilidade com componentes do template Expo.
+ * O NaHora usa apenas light mode — retorna a cor da prop ou um fallback do theme.
  */
-
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
-  colorName: keyof typeof Colors.light & keyof typeof Colors.dark
+  colorName: string
 ) {
-  const theme = useColorScheme() ?? 'light';
-  const colorFromProps = props[theme];
+  // Retorna a cor da prop se fornecida
+  if (props.light) return props.light;
 
-  if (colorFromProps) {
-    return colorFromProps;
-  } else {
-    return Colors[theme][colorName];
-  }
+  // Tenta buscar no Colors pelo nome, com fallbacks seguros
+  const colorMap: Record<string, string> = {
+    text: Colors.textPrimary,
+    background: Colors.background,
+    tint: Colors.primary,
+    icon: Colors.textMuted,
+    tabIconDefault: Colors.tabInactive,
+    tabIconSelected: Colors.primary,
+  };
+
+  if (colorMap[colorName]) return colorMap[colorName];
+
+  const directColor = (Colors as any)[colorName];
+  if (typeof directColor === 'string') return directColor;
+
+  return Colors.textPrimary;
 }

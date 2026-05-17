@@ -1,0 +1,36 @@
+# Dependências
+node_modules/
+.pnp
+.pnp.js
+
+# Banco de dados SQLite (dados locais)
+*.db
+*.db-shm
+*.db-wal
+
+# Variáveis de ambiente (NUNCA commitar)
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+dist/
+build/
+.expo/
+web-build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Cache
+.cache/
